@@ -17,7 +17,7 @@ int main(int argc, char**argv) {
     }
     char *line = NULL;
     size_t len = 0;
-    ssize_t read;
+    //ssize_t read;
     unsigned int lines = 0;
     unsigned int count = 0;
     char *ln, *nptr;
@@ -27,22 +27,26 @@ int main(int argc, char**argv) {
     unsigned int *flist = NULL;
 
     unsigned int element_id = 0;
-    unsigned int check_null = 0;
+    unsigned int item_name = 0;
     
     transactions = (unsigned int *) malloc(max_num_of_transaction * max_items_in_transaction * sizeof(unsigned int));
     trans_offset = (unsigned int *) malloc((max_num_of_transaction + 1) * sizeof(unsigned int));
     flist = (unsigned int *) malloc(max_unique_items * sizeof(unsigned int));
 
+    memset(flist, 255, max_unique_items * sizeof(unsigned int));
+    
     trans_offset[0] = 0;
 
-    while ((read = getline(&line, &len, fp)) != -1){
-    	
+    while (getline(&line, &len, fp) != -1){
+    		
     	count = 0;
 
     	ln = strtok(line, " ");
     	if (ln != NULL){
     			//unsigned int a = (unsigned int) strtoul(ln, NULL, 0);
-    			transactions[element_id++] = (unsigned int) strtoul(ln, NULL, 0);
+    			item_name = (unsigned int) strtoul(ln, NULL, 0);
+    			transactions[element_id++] = item_name;
+    			if (item_name < max_unique_items) flist[item_name] = 0;
     			count++;
     	}
     	
@@ -50,9 +54,10 @@ int main(int argc, char**argv) {
     		// printf("%s ", ln);
     		ln = strtok(NULL, " ");
     		if (ln != NULL){
-    			check_null = (unsigned int) strtoul(ln, &nptr, 0);
+    			item_name = (unsigned int) strtoul(ln, &nptr, 0);
     			if (strcmp(nptr, ln) != 0){
-    				transactions[element_id++] = check_null;
+    				transactions[element_id++] = item_name;
+    				if (item_name < max_unique_items) flist[item_name] = 0;
     				count++;
     			}
     		}
@@ -65,23 +70,25 @@ int main(int argc, char**argv) {
     }
     fclose(fp);
 
-    trans_offset[lines] = NULL;
+    //trans_offset[lines] = NULL;
     //transactions[element_id] = NULL;
 
     unsigned int num_items_in_transactions = element_id;
     unsigned int num_transactions = lines;
 
-    // for (int i = 0; i < num_transactions; i++){
-    // 	int item_ends = 0;
-    // 	if (i == (num_transactions - 1)){
-    // 		item_ends = num_items_in_transactions;
-    // 	}else{
-    // 		item_ends = trans_offset[i+1];
-    // 	}
-    // 	for (int j = trans_offset[i]; j < item_ends; j++)
-    // 		printf("%hu ", transactions[j]);
-    // 	printf("\n");
-    // }
+	#if TEST_MODE
+    for (int i = 0; i < num_transactions; i++){
+    	int item_ends = 0;
+    	if (i == (num_transactions - 1)){
+    		item_ends = num_items_in_transactions;
+    	}else{
+    		item_ends = trans_offset[i+1];
+    	}
+    	for (int j = trans_offset[i]; j < item_ends; j++)
+    		printf("%hu ", transactions[j]);
+    	printf("\n");
+    }
+    #endif
 
     printf("Number of Transactions = %d\n", lines);
   
@@ -128,7 +135,10 @@ int main(int argc, char**argv) {
         cudaMemcpyHostToDevice);
     if(cuda_ret != cudaSuccess) FATAL("Unable to copy memory to the device");
 
-    
+    cuda_ret = cudaMemcpy(d_flist, flist, max_unique_items * sizeof(unsigned int),
+        cudaMemcpyHostToDevice);
+    if(cuda_ret != cudaSuccess) FATAL("Unable to copy memory to the device");
+
     cudaDeviceSynchronize();
     stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
@@ -139,7 +149,7 @@ int main(int argc, char**argv) {
     block_dim.x = BLOCK_SIZE; 
     block_dim.y = 1; block_dim.z = 1;
     
-    grid_dim.x = ceil(num_transactions / (1.0 * BLOCK_SIZE)); 
+    grid_dim.x = ceil(num_items_in_transactions / (1.0 * BLOCK_SIZE)); 
     grid_dim.y = 1; grid_dim.z = 1;  
 
 	//size_t private_flist_size = max_unique_items * sizeof(unsigned int);
@@ -161,21 +171,23 @@ int main(int argc, char**argv) {
     cudaDeviceSynchronize();
     stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
-    //#if TEST_MODE
+    #if TEST_MODE
     printf("\nResult:\n");
     for(unsigned int i = 0; i < max_unique_items; ++i) {
         printf("Item %u: %u frequency\n", i, flist[i]);
     }
-    //#endif
+    #endif
 
     // Free memory ------------------------------------------------------------
 
     free(trans_offset);
     free(transactions);
+    free(flist);
 
     cudaFree(d_trans_offsets);
     cudaFree(d_transactions);
-    
+    cudaFree(d_flist);
+
     return 0;
 
 }
