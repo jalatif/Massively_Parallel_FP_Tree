@@ -11,76 +11,28 @@
 
 // INSERT KERNEL(S) HERE
 
-#include <stdio.h>
-#include <cuda.h>
-#include <string.h>
-#include <stdlib.h>
+#define max_items_in_transaction 128
+#define max_num_of_transaction 1000000
 
-__device__ inline unsigned int uatomicAdd(unsigned int* address, int incr){
+#define max_unique_items 16384
 
-	int expected = *address;
-	int old_val = atomicCAS((int*) address, expected, expected + incr);
+#define BLOCK_SIZE 1024
 
-	while (old_val != expected){
-		expected = old_val;
-		old_val = atomicCAS((int*) address, expected, expected + incr);
-	}
-	return old_val;
-}
+__global__ void makeFlist(unsigned int *d_trans_offset, unsigned short int *d_transactions , unsigned int num_transactions, unsigned int num_items_in_transactions){
 
-__global__ void histogram_kernel(unsigned int *input, unsigned int* bins, unsigned int num_elements, unsigned int num_bins){
+	__shared__ unsigned short int private_items[max_unique_items];
 
-	__shared__ short int private_items[];
-
-	int tx = threadIdx.x;
-	int current = tx + blockDim.x * blockIdx.x;
-	int location_x;
-
-	for (int i = 0; i < ceil(num_bins / (1.0 * blockDim.x)); i++){
-		location_x = tx + i * blockDim.x;
-		if ( location_x < num_bins)
-			private_histogram[location_x] = 0;
-	}
-	__syncthreads();
-
-	if (current < num_elements && input[current] < num_bins){
-		atomicAdd((unsigned int*)(&private_histogram[input[current]]), 1);
-	}
-
-	__syncthreads();
-
-	for (int i = 0; i < ceil(num_bins / (1.0 * blockDim.x)); i++){
-		location_x = tx + i * blockDim.x;
-		if (location_x < num_bins)
-			atomicAdd((int*)(&bins[location_x]), private_histogram[location_x]);
-	}
-}
-
-
-
-
-
-/******************************************************************************
-Setup and invoke your kernel(s) in this function. You may also allocate more
-GPU memory if you need to
-*******************************************************************************/
-void histogram(unsigned int* input, unsigned int* bins, unsigned int num_elements,
-        unsigned int num_bins) {
-
-    // INSERT CODE HERE
-	unsigned int block_size = 512;
-    dim3 grid_dim, block_dim;
-
-    block_dim.x = block_size; 
-    block_dim.y = 1; block_dim.z = 1;
+	int tx = threadIdx.x + blockDim.x * blockIdx.x;
 	
-	grid_dim.x = ceil(num_elements / (1.0 * block_size)); 
-	grid_dim.y = 1; grid_dim.z = 1;
+	int item_ends = 0;
+	
+	if (tx == (num_transactions - 1)){
+		item_ends = num_items_in_transactions;
+	}else{
+		item_ends = d_trans_offset[tx + 1];
+	}
 
-	size_t private_hist_size = num_bins * sizeof(unsigned int);
-	histogram_kernel<<<grid_dim, block_dim, private_hist_size>>>(input, bins, num_elements, num_bins);
+	for(int i = d_trans_offset[tx]; i < item_ends; i++){
+		atomicAdd((int*)&private_items[d_transactions[i]], 1);
+	}
 }
-
-
-/// Dynamic Shared memory
-///
