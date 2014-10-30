@@ -21,11 +21,11 @@ int main(int argc, char**argv) {
     unsigned int lines = 0;
     unsigned int count = 0;
     char *ln, *nptr;
-    unsigned short int *transactions = NULL;
+    unsigned int *transactions = NULL;
     unsigned int *trans_offset = NULL;
     unsigned int element_id = 0;
-    unsigned short int check_null = 0;
-    transactions = (unsigned short int *) malloc(max_num_of_transaction * max_items_in_transaction * sizeof(unsigned short int));
+    unsigned int check_null = 0;
+    transactions = (unsigned int *) malloc(max_num_of_transaction * max_items_in_transaction * sizeof(unsigned int));
     trans_offset = (unsigned int *) malloc((max_num_of_transaction + 1) * sizeof(unsigned int));
     trans_offset[0] = 0;
 
@@ -35,8 +35,8 @@ int main(int argc, char**argv) {
 
     	ln = strtok(line, " ");
     	if (ln != NULL){
-    			//unsigned short int a = (unsigned short int) strtoul(ln, NULL, 0);
-    			transactions[element_id++] = (unsigned short int) strtoul(ln, NULL, 0);
+    			//unsigned int a = (unsigned int) strtoul(ln, NULL, 0);
+    			transactions[element_id++] = (unsigned int) strtoul(ln, NULL, 0);
     			count++;
     	}
     	
@@ -44,7 +44,7 @@ int main(int argc, char**argv) {
     		// printf("%s ", ln);
     		ln = strtok(NULL, " ");
     		if (ln != NULL){
-    			check_null = (unsigned short int) strtoul(ln, &nptr, 0);
+    			check_null = (unsigned int) strtoul(ln, &nptr, 0);
     			if (strcmp(nptr, ln) != 0){
     				transactions[element_id++] = check_null;
     				count++;
@@ -73,13 +73,12 @@ int main(int argc, char**argv) {
     		item_ends = trans_offset[i+1];
     	}
     	for (int j = trans_offset[i]; j < item_ends; j++)
-    		printf("%hu, ", transactions[j]);
+    		printf("%hu ", transactions[j]);
     	printf("\n");
     }
 
-    printf("%d\n", lines);
-    printf("%d\n", sizeof(unsigned int));
-
+    printf("Number of Transactions = %d\n", lines);
+  
     /////////////////////////////////////////////////////////////////////////////////////
     /////////////////////// Device Variables Initializations ///////////////////////////
     /////////////////////////////////////////////////////////////////////////////////////
@@ -88,7 +87,7 @@ int main(int argc, char**argv) {
 	cudaError_t cuda_ret;
 	dim3 grid_dim, block_dim;
 
-    unsigned short int *d_transactions;
+    unsigned int *d_transactions;
     unsigned int *d_trans_offsets;
     
     // Allocate device variables ----------------------------------------------
@@ -96,7 +95,7 @@ int main(int argc, char**argv) {
     printf("Allocating device variables..."); fflush(stdout);
     startTime(&timer);
 
-    cuda_ret = cudaMalloc((void**)&d_transactions, num_items_in_transactions * sizeof(unsigned short int));
+    cuda_ret = cudaMalloc((void**)&d_transactions, num_items_in_transactions * sizeof(unsigned int));
     if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
     cuda_ret = cudaMalloc((void**)&d_trans_offsets, num_transactions * sizeof(unsigned int));
     if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
@@ -109,7 +108,7 @@ int main(int argc, char**argv) {
 	printf("Copying data from host to device..."); fflush(stdout);
     startTime(&timer);
 
-    cuda_ret = cudaMemcpy(d_transactions, transactions, num_items_in_transactions * sizeof(unsigned short int),
+    cuda_ret = cudaMemcpy(d_transactions, transactions, num_items_in_transactions * sizeof(unsigned int),
         cudaMemcpyHostToDevice);
     if(cuda_ret != cudaSuccess) FATAL("Unable to copy memory to the device");
 
@@ -130,12 +129,21 @@ int main(int argc, char**argv) {
     
     grid_dim.x = ceil(num_transactions / (1.0 * BLOCK_SIZE)); 
     grid_dim.y = 1; grid_dim.z = 1;  
-    
+
     makeFlist<<<grid_dim, block_dim>>>(d_trans_offsets, d_transactions, num_transactions, num_items_in_transactions);
     cuda_ret = cudaDeviceSynchronize();
     if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
 
     stopTime(&timer); printf("%f s\n", elapsedTime(timer));
+
+    // Free memory ------------------------------------------------------------
+
+    free(trans_offset);
+    free(transactions);
+
+    cudaFree(d_trans_offsets);
+    cudaFree(d_transactions);
+    
     return 0;
 
 }
