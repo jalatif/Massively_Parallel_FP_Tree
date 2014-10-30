@@ -10,7 +10,7 @@ int main(int argc, char**argv) {
 
 	//File read into datastructures
 
-    FILE *fp = fopen("/home/manshu/UIUC/CS 412 - Data Mining/data-assign3/data-assign3/topic-0.txt", "r");
+    FILE *fp = fopen("topic-0.txt", "r");
     if (fp == NULL){
     	printf("Can't read file");
     	exit(0);
@@ -21,12 +21,18 @@ int main(int argc, char**argv) {
     unsigned int lines = 0;
     unsigned int count = 0;
     char *ln, *nptr;
+    
     unsigned int *transactions = NULL;
     unsigned int *trans_offset = NULL;
+    unsigned int *flist = NULL;
+
     unsigned int element_id = 0;
     unsigned int check_null = 0;
+    
     transactions = (unsigned int *) malloc(max_num_of_transaction * max_items_in_transaction * sizeof(unsigned int));
     trans_offset = (unsigned int *) malloc((max_num_of_transaction + 1) * sizeof(unsigned int));
+    flist = (unsigned int *) malloc(max_unique_items * sizeof(unsigned int));
+
     trans_offset[0] = 0;
 
     while ((read = getline(&line, &len, fp)) != -1){
@@ -65,17 +71,17 @@ int main(int argc, char**argv) {
     unsigned int num_items_in_transactions = element_id;
     unsigned int num_transactions = lines;
 
-    for (int i = 0; i < num_transactions; i++){
-    	int item_ends = 0;
-    	if (i == (num_transactions - 1)){
-    		item_ends = num_items_in_transactions;
-    	}else{
-    		item_ends = trans_offset[i+1];
-    	}
-    	for (int j = trans_offset[i]; j < item_ends; j++)
-    		printf("%hu ", transactions[j]);
-    	printf("\n");
-    }
+    // for (int i = 0; i < num_transactions; i++){
+    // 	int item_ends = 0;
+    // 	if (i == (num_transactions - 1)){
+    // 		item_ends = num_items_in_transactions;
+    // 	}else{
+    // 		item_ends = trans_offset[i+1];
+    // 	}
+    // 	for (int j = trans_offset[i]; j < item_ends; j++)
+    // 		printf("%hu ", transactions[j]);
+    // 	printf("\n");
+    // }
 
     printf("Number of Transactions = %d\n", lines);
   
@@ -89,6 +95,7 @@ int main(int argc, char**argv) {
 
     unsigned int *d_transactions;
     unsigned int *d_trans_offsets;
+    unsigned int *d_flist;
     
     // Allocate device variables ----------------------------------------------
 
@@ -99,6 +106,11 @@ int main(int argc, char**argv) {
     if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
     cuda_ret = cudaMalloc((void**)&d_trans_offsets, num_transactions * sizeof(unsigned int));
     if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
+   	cuda_ret = cudaMalloc((void**)&d_flist, max_unique_items * sizeof(unsigned int));
+    if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
+	
+	cuda_ret = cudaMemset(d_flist, 0, max_unique_items * sizeof(unsigned int));
+    if(cuda_ret != cudaSuccess) FATAL("Unable to set device memory");
 
     cudaDeviceSynchronize();
     stopTime(&timer); printf("%f s\n", elapsedTime(timer));
@@ -130,11 +142,31 @@ int main(int argc, char**argv) {
     grid_dim.x = ceil(num_transactions / (1.0 * BLOCK_SIZE)); 
     grid_dim.y = 1; grid_dim.z = 1;  
 
-    makeFlist<<<grid_dim, block_dim>>>(d_trans_offsets, d_transactions, num_transactions, num_items_in_transactions);
+	//size_t private_flist_size = max_unique_items * sizeof(unsigned int);
+    makeFlist<<<grid_dim, block_dim>>>(d_trans_offsets, d_transactions, d_flist, num_transactions, num_items_in_transactions);
     cuda_ret = cudaDeviceSynchronize();
     if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
 
     stopTime(&timer); printf("%f s\n", elapsedTime(timer));
+
+ 	// Copy device variables from host ----------------------------------------
+
+    printf("Copying data from device to host..."); fflush(stdout);
+    startTime(&timer);
+
+    cuda_ret = cudaMemcpy(flist, d_flist, max_unique_items * sizeof(unsigned int),
+        cudaMemcpyDeviceToHost);
+	if(cuda_ret != cudaSuccess) FATAL("Unable to copy memory to host");
+
+    cudaDeviceSynchronize();
+    stopTime(&timer); printf("%f s\n", elapsedTime(timer));
+
+    //#if TEST_MODE
+    printf("\nResult:\n");
+    for(unsigned int i = 0; i < max_unique_items; ++i) {
+        printf("Item %u: %u frequency\n", i, flist[i]);
+    }
+    //#endif
 
     // Free memory ------------------------------------------------------------
 

@@ -11,14 +11,13 @@
 
 // INSERT KERNEL(S) HERE
 
+
 #define max_items_in_transaction 128
 #define max_num_of_transaction 1000000
-
 #define max_unique_items 8192
-
 #define BLOCK_SIZE 512
 
-__global__ void makeFlist(unsigned int *d_trans_offset, unsigned int *d_transactions , unsigned int num_transactions, unsigned int num_items_in_transactions){
+__global__ void makeFlist(unsigned int *d_trans_offset, unsigned int *d_transactions, unsigned int *d_flist, unsigned int num_transactions, unsigned int num_items_in_transactions){
 
 	__shared__ unsigned int private_items[max_unique_items];
 
@@ -42,8 +41,17 @@ __global__ void makeFlist(unsigned int *d_trans_offset, unsigned int *d_transact
 	}
 	//int j = 0;
 	for(int i = d_trans_offset[tx]; i < item_ends; i++){
-		if (d_transactions[i] >=0 && d_transactions[i] < max_unique_items)
-			atomicAdd(&private_items[0], 1);
+		if (d_transactions[i] < max_unique_items)
+			atomicAdd(&private_items[d_transactions[i]], 1);
 		//j = d_transactions[i];
 	}
+
+	__syncthreads();
+
+	for (int i = 0; i < ceil(max_unique_items / (1.0 * blockDim.x)); i++){
+		location_x = tx + i * blockDim.x;
+		if ( location_x < max_unique_items)
+			atomicAdd(&d_flist[location_x], private_items[location_x]);
+	}
+
 }
